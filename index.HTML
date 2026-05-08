@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>빙고 다회차 프로토타입 (UI 적용)</title>
+    <style>
+        body { background-color: #f0f0f0; font-family: 'Malgun Gothic', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .ui-container { display: flex; background: #fff; border: 4px solid #ff6600; padding: 20px; border-radius: 10px; width: 800px; gap: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        
+        .left-area { flex: 1; border: 2px solid #ff6600; padding: 15px; background: #ffe6d5; border-radius: 5px; }
+        .round-info { font-size: 1.2em; font-weight: bold; color: #ff6600; margin-bottom: 10px; text-align: center; }
+        .bingo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .panel { aspect-ratio: 1; background-color: #8cc6ff; border: 2px solid #fff; display: flex; justify-content: center; align-items: center; font-size: 2em; font-weight: bold; border-radius: 5px; transition: 0.3s; }
+        .panel.open { background-color: #4caf50; color: white; transform: scale(0.95); border-color: #2e7d32; }
+        
+        .right-area { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        
+        .character-area { flex: 1; border: 2px solid #ff6600; background: #e0e0e0; display: flex; justify-content: center; align-items: center; font-weight: bold; color: #555; position: relative; border-radius: 5px; }
+        .speech-bubble { position: absolute; top: 10px; left: 10px; background: #fff; padding: 5px 10px; border-radius: 10px; border: 2px solid #333; font-size: 0.9em; cursor: pointer; }
+        
+        .control-area { display: flex; gap: 10px; border: 2px solid #ff6600; padding: 10px; background: #eee; border-radius: 5px; }
+        .btn-box { flex: 1; background: #999; padding: 10px; border-radius: 5px; text-align: center; color: white; }
+        .btn-box span { display: block; font-size: 1.2em; font-weight: bold; margin-bottom: 10px; }
+        button { width: 100%; padding: 10px; font-weight: bold; border: none; border-radius: 3px; cursor: pointer; transition: 0.2s; }
+        button:hover { opacity: 0.8; }
+        .btn-normal { background: #fff; color: #333; border: 2px solid #333; }
+        .btn-guarantee { background: #fff; color: #333; border: 2px solid #333; }
+        button:disabled { background: #ccc; border-color: #aaa; color: #888; cursor: not-allowed; }
+
+        #sys-log { margin-top: 20px; height: 120px; overflow-y: auto; background: #222; color: #0f0; padding: 10px; font-family: monospace; font-size: 13px; border-radius: 5px; width: 800px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div>
+    <div class="ui-container">
+        <div class="left-area">
+            <div class="round-info" id="round-display">현재 1회차 진행 중</div>
+            <div class="bingo-grid" id="grid"></div>
+        </div>
+
+        <div class="right-area">
+            <div class="character-area">
+                <div class="speech-bubble" id="help-btn">도움말 팝업 열기(?)</div>
+                [부관 이미지 영역]
+            </div>
+            
+            <div class="control-area">
+                <div class="btn-box">
+                    잔여 토큰: 무한<br>
+                    <span id="scan-count">총 0회 스캔</span>
+                    <button class="btn-normal" id="btn-normal">일반 스캔 (토큰 1)</button>
+                </div>
+                <div class="btn-box" style="background: #666;">
+                    보유 마일리지<br>
+                    <span id="mileage-display" style="color: #ffeb3b;">0 M</span>
+                    <button class="btn-guarantee" id="btn-guarantee">확정 스캔 (3 M)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="sys-log"></div>
+</div>
+
+<script>
+window.onload = function() {
+    var panels = [false, false, false, false, false, false, false, false, false];
+    var mileage = 0;
+    var currentRound = 1;
+    var totalScans = 0;
+
+    var gridEl = document.getElementById('grid');
+    var logEl = document.getElementById('sys-log');
+    var mileageEl = document.getElementById('mileage-display');
+    var roundEl = document.getElementById('round-display');
+    var countEl = document.getElementById('scan-count');
+    var btnNormal = document.getElementById('btn-normal');
+    var btnGuarantee = document.getElementById('btn-guarantee');
+    var btnHelp = document.getElementById('help-btn');
+
+    function initBoard() {
+        gridEl.innerHTML = '';
+        for(var i=0; i<9; i++) {
+            var div = document.createElement('div');
+            div.className = 'panel';
+            div.id = 'panel-' + i;
+            div.innerText = (i + 1);
+            gridEl.appendChild(div);
+        }
+        updateUI();
+        log(">>> 시스템 구동 완료. 스캔을 시작하세요.");
+    }
+
+    function log(msg) {
+        logEl.innerHTML += '<div>' + msg + '</div>';
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function updateUI() {
+        mileageEl.innerText = mileage + " M";
+        roundEl.innerText = "현재 " + currentRound + "회차 진행 중";
+        countEl.innerText = "총 " + totalScans + "회 스캔";
+        
+        for(var i=0; i<9; i++) {
+            var p = document.getElementById('panel-' + i);
+            if(p) {
+                if(panels[i]) {
+                    p.className = 'panel open';
+                    p.innerText = "개방";
+                } else {
+                    p.className = 'panel';
+                    p.innerText = (i + 1);
+                }
+            }
+        }
+        // 마일리지 부족 시 확정 스캔 버튼 비활성화
+        btnGuarantee.disabled = (mileage < 3);
+    }
+
+    function checkClear() {
+        var openCount = 0;
+        for(var i=0; i<9; i++) {
+            if(panels[i]) openCount++;
+        }
+
+        if(openCount === 9) {
+            log("<b>🎉 [시스템] " + currentRound + "회차 올 클리어! (소모 스캔: " + totalScans + "회)</b>");
+            alert(currentRound + "회차를 완료했습니다!\n마일리지는 유지된 채 보드가 리셋됩니다.");
+            
+            currentRound++;
+            totalScans = 0;
+            panels = [false, false, false, false, false, false, false, false, false];
+            log(">>> " + currentRound + "회차 보드가 초기화되었습니다. (이월된 마일리지: " + mileage + " M)");
+        }
+        updateUI();
+    }
+
+    btnNormal.onclick = function() {
+        totalScans++;
+        var target = Math.floor(Math.random() * 9);
+        log("[일반 스캔] 레이더 가동... " + (target + 1) + "번 패널 판정!");
+        
+        if(panels[target]) {
+            mileage++;
+            log(" ↳ 중복 당첨! 마일리지 1 적립. (현재: " + mileage + "M)");
+        } else {
+            panels[target] = true;
+            log(" ↳ <b>" + (target + 1) + "번 패널 신규 개방!</b>");
+        }
+        checkClear();
+    };
+
+    btnGuarantee.onclick = function() {
+        if(mileage < 3) return;
+
+        totalScans++;
+        mileage -= 3;
+        
+        var closed = [];
+        for(var i=0; i<9; i++) {
+            if(!panels[i]) closed.push(i);
+        }
+
+        if(closed.length > 0) {
+            var randIdx = Math.floor(Math.random() * closed.length);
+            var target = closed[randIdx];
+            panels[target] = true;
+            log("[확정 스캔] 마일리지 3 소모. <b>" + (target + 1) + "번 패널 강제 개방!</b>");
+        }
+        checkClear();
+    };
+
+    btnHelp.onclick = function() {
+        alert("도움말: 스트링 테이블 참조 및 팝업 출력 테스트 성공!");
+    };
+
+    // 브라우저 렌더링 완료 후 엔진 시동
+    initBoard();
+};
+</script>
+</body>
+</html>
